@@ -1,0 +1,21 @@
+[Unit]
+Description=User-level Input Forwarder with SSH HID over USB
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env python3 -m input_forwarder
+Restart=on-failure
+Environment=PYTHONPATH=/usr/lib/
+#Environment=KEYBOARD=Your Keyboard Name
+#Environment=MOUSE=Your Mouse Name
+Environment="KEYBOARD=SINO WEALTH Gaming KB"
+Environment="MOUSE=Razer Razer Viper"
+StandardOutput=journal
+StandardError=journal
+
+
+
+[Install]
+WantedBy=default.target
+
