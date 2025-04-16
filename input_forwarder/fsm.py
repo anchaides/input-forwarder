@@ -4,24 +4,28 @@ from enum import Enum
 import threading
 
 class TFSM_STATE(Enum):
-    IDLE    = 0
-    TOGGLE  = 1
-    TOGGLEK = 2
-    PEN     = 3
-    PEN2    = 4
-    PEN3    = 5
+    IDLE                = 0
+    TOGGLE              = 1
+    TOGGLEK             = 2
+    PEN                 = 3
+    POST_TOGGLE_UNGRAB  = 4
+    PEN3                = 5
+    POST_TOGGLE_GRAB    = 6 
 
 class TFSM:
     def __init__(self, grab_devices, ungrab_devices, printer=print):
         self._state = TFSM_STATE.IDLE
         self._key1 = False
         self._key2 = False
+        self._flagkbi = True
+        self._flagmi = True
         self._edge = False
         self._relx = False
         self._release = False
         self._grabbed = False
         self._flag_pos = False
-        self._updt_pos = False
+        self._flag_pos_ack = False
+        #self._updt_pos = False
         self._lock = threading.Lock()
 
         self._grab_devices = grab_devices
@@ -29,15 +33,31 @@ class TFSM:
         self._print = printer
 
     @property
-    def updt_pos(self):
-        if self._updt_pos:
-            self._updt_pos = False
+    def flagkbi(self):
+        return self._flagkbi
+
+    @flagkbi.setter
+    def flagkbi(self, value):
+        self._flagkbi = value 
+
+    @property
+    def flagmi(self):
+        return self._flagmi
+
+    @flagmi.setter
+    def flagmi(self, value):
+        self._flagmi = value 
+
+    @property
+    def flag_pos_ack(self):
+        if self._flag_pos_ack:
+            self._flag_pos_ack = False
             return True
         return False
 
-    @updt_pos.setter
-    def updt_pos(self, value):
-        self._updt_pos = value
+    @flag_pos_ack.setter
+    def flag_pos_ack(self, value):
+        self._flag_pos_ack = value
 
     @property
     def flag_pos(self):
@@ -119,7 +139,7 @@ class TFSM:
                 if self.key1 and self.key2:
                     self._print("Keyboard Toggle")
                     self.state = TFSM_STATE.TOGGLEK
-                elif self.edge and self.relx:
+                elif self.edge and self.relx and self.flagkbi and self.flagmi:
                     self._print("Edge of screen toggle")
                     self.state = TFSM_STATE.TOGGLE
 
@@ -128,13 +148,13 @@ class TFSM:
                     self._print("Un-grabbing devices: EDGE")
                     self.release = True
                     self.flag_pos = True
-                    self.state = TFSM_STATE.PEN2
+                    self.state = TFSM_STATE.POST_TOGGLE_UNGRAB
                 else:
                     self._print("Grabbing devices: EDGE")
-                    self._grab_devices()
-                    self.grabbed = True
+                    #self._grab_devices()
+                    #self.grabbed = True
                     self.flag_pos = True
-                    self.state = TFSM_STATE.PEN
+                    self.state = TFSM_STATE.POST_TOGGLE_GRAB
 
             elif self.state == TFSM_STATE.TOGGLEK:
                 if not (self.key1 or self.key2):
@@ -155,16 +175,18 @@ class TFSM:
                     self._print("Back to IDLE from PEN")
                     self.state = TFSM_STATE.IDLE
 
-            elif self.state == TFSM_STATE.PEN2:
-                #self._print("State = PEN2")
-                if self.updt_pos:
-                    self._print("PEN2: State has been updated, back to IDLE")
+            elif self.state == TFSM_STATE.POST_TOGGLE_UNGRAB:
+                #self._print("State = POST_TOGGLE_UNGRAB")
+                if self.flag_pos_ack:
+                    self._print("POST_TOGGLE_UNGRAB: State has been updated, now to PEN3")
                     self._ungrab_devices()
                     self.grabbed = False
-                    self.state = TFSM_STATE.PEN3
+                    self.state = TFSM_STATE.PEN
 
-            elif self.state == TFSM_STATE.PEN3: 
-                if not (self.edge or self.relx): 
-                    self._print("Back to IDLE from PEN3") 
-                    self.state = TFSM_STATE.IDLE
+            elif self.state == TFSM_STATE.POST_TOGGLE_GRAB: 
+                if self.flag_pos_ack == True: 
+                    self._print("POST_TOGGLE_GRAB: Updated position has been sent to device, now we can grab devices") 
+                    self._grab_devices() 
+                    self.grabbed = True
+                    self.state = TFSM_STATE.PEN 
 

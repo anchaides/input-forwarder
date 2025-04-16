@@ -36,8 +36,14 @@ def keyboard_thread(dev, tfsm, ssh_stream, pressed_keys, printer):
                     tfsm.key2 = False
                 else:
                     pressed_keys.discard(hid_code)
+       
         else:
             printer(f"Unknown key code: {code}")
+
+        if modifiers == 0 and all ( key == 0 for key  in pressed_keys):
+            tfsm.flagkbi = True 
+        else:
+            tfsm.flagkbi = False 
 
         report = bytearray(8)
         if tfsm.release:
@@ -74,6 +80,12 @@ def mouse_thread(dev, tfsm, ssh_stream, shared_state, printer):
                 buttons = buttons | 0x02 if event.value else buttons & ~0x02
             elif event.code == ecodes.BTN_MIDDLE:
                 buttons = buttons | 0x04 if event.value else buttons & ~0x04
+
+            if buttons == 0x00: 
+                tfsm.flagmi = True 
+            else:
+                tfsm.flagmi = False 
+
             if tfsm.grabbed:
                 report = bytearray([buttons, 0, 0, 0])
                 ssh_stream.stdin.write(report)
@@ -127,7 +139,8 @@ def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer):
                 if tfsm.flag_pos:
                     composer.set_pointer_position(shared_state['height_ratio'])
                     printer("Updated local position")
-                    tfsm.updt_pos = True
+                    #tfsm.updt_pos = True
+                    tfsm.flag_pos_ack = True 
             else:
                 x, y, sw, sh = composer.get_pointer_position()
                 shared_state['screen_width'] = sw / 5120
@@ -148,6 +161,7 @@ def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer):
                             ssh_stream.stdin.write(abs_report)
                             ssh_stream.stdin.flush()
                             printer("[Toggle] Sent absolute reset to remote: X=0 Y=", scaled_y)
+                            tfsm.flag_pos_ack = True 
                         except Exception as e:
                             printer("[Remote Abs Write Error]", e)
                 else:
