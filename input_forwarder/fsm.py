@@ -178,7 +178,7 @@ class TFSM:
             elif self.state == TFSM_STATE.POST_TOGGLE_UNGRAB:
                 #self._print("State = POST_TOGGLE_UNGRAB")
                 if self.flag_pos_ack:
-                    self._print("POST_TOGGLE_UNGRAB: State has been updated, now to PEN3")
+                    self._print("POST_TOGGLE_UNGRAB: Updated position has been sent to local pointer, now we can ungrab the devices")
                     self._ungrab_devices()
                     self.grabbed = False
                     self.state = TFSM_STATE.PEN
