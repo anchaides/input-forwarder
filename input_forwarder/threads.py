@@ -6,10 +6,13 @@ from evdev import ecodes
 from .config import LINUX_TO_HID, MODIFIER_MASK
 
 
-def keyboard_thread(dev, tfsm, ssh_stream, pressed_keys, printer):
+def keyboard_thread(dev, tfsm, ssh_stream, pressed_keys, printer, shutdown_event):
     modifiers = 0
 
+    #while not shutdown_event.is_set(): 
     for event in dev.read_loop():
+        if shutdown_event.is_set(): 
+            break 
         if event.type != ecodes.EV_KEY:
             continue
         code = event.code
@@ -68,11 +71,16 @@ def keyboard_thread(dev, tfsm, ssh_stream, pressed_keys, printer):
                 printer("Keyboard write failed (grabbed):", e)
                 raise RuntimeError("Keyboard write error")
 
+    print("Exiting Keyboard thread cleanly") 
 
-def mouse_thread(dev, tfsm, ssh_stream, shared_state, printer):
+
+def mouse_thread(dev, tfsm, composer, ssh_stream, shared_state, printer, shutdown_event):
     buttons = dx = dy = wheel = 0
 
+    #while not shutdown_event.is_set(): 
     for event in dev.read_loop():
+        if shutdown_event.is_set(): 
+            break 
         if event.type == ecodes.EV_KEY:
             if event.code == ecodes.BTN_LEFT:
                 buttons = buttons | 0x01 if event.value else buttons & ~0x01
@@ -99,7 +107,10 @@ def mouse_thread(dev, tfsm, ssh_stream, shared_state, printer):
             elif event.code == ecodes.REL_WHEEL:
                 wheel += event.value
 
-            tfsm.relx = (dx > 0 and not tfsm.grabbed) or (dx < 0 and tfsm.grabbed)
+            if composer.composer != "WAYLAND":
+                tfsm.relx = (dx > 0 and not tfsm.grabbed) or (dx < 0 and tfsm.grabbed)
+            elif tfsm.grabbed: 
+                tfsm.relx = dx < 0
             #tfsm.fsm()
             #print(f"tfsm.relx is {tfsm.relx}") 
 
@@ -121,11 +132,12 @@ def mouse_thread(dev, tfsm, ssh_stream, shared_state, printer):
                     raise RuntimeError("Mouse thread write error")
 
             dx = dy = wheel = 0
+    print("Exiting Mouse thread cleanly") 
 
 
-def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer):
+def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer, shutdown_event):
     try:
-        while True:
+        while not shutdown_event.is_set():
             time.sleep(0.001)
 
             if tfsm.grabbed:
@@ -142,19 +154,27 @@ def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer):
                     #tfsm.updt_pos = True
                     tfsm.flag_pos_ack = True 
             else:
+                # if we are on Wayland update the events before quering pointer position 
+                #if composer.composer == "WAYLAND":
+                    #composer._run_event_loop_once() 
+
                 x, y, sw, sh = composer.get_pointer_position()
                 shared_state['screen_width'] = sw / 5120
 
-    #            print(f"x is {x}")
-
+                #printer(f"x position is {x} screen width is {sw}") 
                 if x >= (sw - 1):
                     tfsm.edge = True
-                    #print("We should transition here") 
+                    if composer.composer == "WAYLAND":
+                        tfsm.relx = True 
+
+                    print("We should transition here") 
 
                     scaled_y = int((y / sh) * shared_state['remote_screen_max_y'])
 
-                    #tfsm.fsm()
+                    tfsm.fsm()
+
                     if tfsm.flag_pos:
+                        print("FSM: flag_position = True") 
                         abs_report = bytearray([0x00, 0x00, 0x00, scaled_y & 0xFF, (scaled_y >> 8) & 0xFF])
                         shared_state['remote_virtual_y'] = int((y / sh) * shared_state['max_virtual_y'])
                         try:
@@ -163,9 +183,14 @@ def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer):
                             printer("[Toggle] Sent absolute reset to remote: X=0 Y=", scaled_y)
                             tfsm.flag_pos_ack = True 
                         except Exception as e:
-                            printer("[Remote Abs Write Error]", e)
+                            print("[Remote Abs Write Error]", e)
                 else:
                     tfsm.edge = False
+                    
+                    if composer.composer == "WAYLAND":
+                        tfsm.relx = False 
+
+        print("Mouse absolute thread exited cleanly") 
 
     except Exception as e:
         printer("mouse absolute thread failed:", e)

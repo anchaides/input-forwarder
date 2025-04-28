@@ -13,6 +13,8 @@ from .config import (
 )
 from .fsm import TFSM
 from .io_backend_x11 import X11ComposerBackend
+from .io_backend_wayland  import WaylandComposerBackend
+
 from .threads import keyboard_thread, mouse_thread, mmabs_thread
 
 print_lock = threading.Lock()
@@ -52,6 +54,14 @@ def is_mouse(dev):
     except:
         return False
 
+def get_display_server():
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return "WAYLAND"
+    elif os.environ.get("DISPLAY"):
+        return "X11"
+    else:
+        return "unknown"
+
 def main():
     devices = [InputDevice(path) for path in list_devices()]
     keyboard = next((d for d in devices if is_keyboard(d)), None)
@@ -81,8 +91,15 @@ def main():
         "scaling_factor": SCALING_FACTOR,
     }
 
-    # Compose backend and FSM
-    composer = X11ComposerBackend()
+    dp = get_display_server() 
+
+    if dp is "WAYLAND": 
+        composer = WaylandComposerBackend() 
+    else: 
+        composer = X11ComposerBackend() 
+
+    print(f"Running under: {dp}")
+    #composer = WaylandComposerBackend()
     pressed_keys = set()
 
     tfsm = TFSM(
@@ -91,10 +108,11 @@ def main():
         printer=safe_print
     )
 
+    shutdown_event = threading.Event() 
     threads = [
-        threading.Thread(target=keyboard_thread, daemon=True, args=(keyboard, tfsm, sshkb, pressed_keys, safe_print)),
-        threading.Thread(target=mouse_thread,    daemon=True, args=(mouse, tfsm, sshm,  shared_state, safe_print)),
-        threading.Thread(target=mmabs_thread,    daemon=True, args=(tfsm, composer, sshm1, shared_state, safe_print))
+        threading.Thread(target=keyboard_thread, daemon=True, args=(keyboard, tfsm, sshkb, pressed_keys, safe_print, shutdown_event)),
+        threading.Thread(target=mouse_thread,    daemon=True, args=(mouse, tfsm, composer, sshm,  shared_state, safe_print, shutdown_event)),
+        threading.Thread(target=mmabs_thread,    daemon=True, args=(tfsm, composer, sshm1, shared_state, safe_print, shutdown_event))
     ]
 
     for t in threads:
@@ -107,9 +125,15 @@ def main():
                     raise RuntimeError(f"[FATAL] Thread {i} has died.")
             threading.Event().wait(1)
 
+    # Kill app cleanly 
     except KeyboardInterrupt:
         for ssh in (sshkb, sshm, sshm1):
             if ssh: ssh.terminate()
+        shutdown_event.set() 
+        for t in threads: 
+            print("Joining threads") 
+            t.join() 
+        composer.shutdown() 
         sys.exit(0)
 
     except BaseException as e:

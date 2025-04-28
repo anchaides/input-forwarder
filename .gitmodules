@@ -1,0 +1,3 @@
+[submodule "wayland_client/wlr-protocols"]
+	path = wayland_client/wlr-protocols
+	url = https://gitlab.freedesktop.org/wlroots/wlr-protocols.git
