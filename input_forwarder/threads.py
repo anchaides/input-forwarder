@@ -77,6 +77,11 @@ def keyboard_thread(dev, tfsm, ssh_stream, pressed_keys, printer, shutdown_event
 def mouse_thread(dev, tfsm, composer, ssh_stream, shared_state, printer, shutdown_event):
     buttons = dx = dy = wheel = 0
 
+    if composer.composer != "WAYLAND":
+        threshold = 0
+    else:
+        threshold = 5
+
     #while not shutdown_event.is_set(): 
     for event in dev.read_loop():
         if shutdown_event.is_set(): 
@@ -107,10 +112,10 @@ def mouse_thread(dev, tfsm, composer, ssh_stream, shared_state, printer, shutdow
             elif event.code == ecodes.REL_WHEEL:
                 wheel += event.value
 
-            if composer.composer != "WAYLAND":
-                tfsm.relx = (dx > 0 and not tfsm.grabbed) or (dx < 0 and tfsm.grabbed)
-            elif tfsm.grabbed: 
-                tfsm.relx = dx < 0
+            #if composer.composer != "WAYLAND":
+            tfsm.relx = (dx > threshold and not tfsm.grabbed) or (dx < -1*threshold and tfsm.grabbed)
+            #elif tfsm.grabbed: 
+                #tfsm.relx = dx < -1*threshold
             #tfsm.fsm()
             #print(f"tfsm.relx is {tfsm.relx}") 
 
@@ -123,6 +128,7 @@ def mouse_thread(dev, tfsm, composer, ssh_stream, shared_state, printer, shutdow
                 shared_state['remote_virtual_y'] = max(0, min(shared_state['remote_virtual_y'] + dy, max_vy))
                 shared_state['height_ratio'] = shared_state['remote_virtual_y'] / max_vy
 
+                #printer(f"remote coordinate: {shared_state['remote_virtual_x']},{shared_state['remote_virtual_y']}") 
                 report = bytearray([buttons, dx & 0xFF, dy & 0xFF, wheel & 0xFF])
                 try:
                     ssh_stream.stdin.write(report)
@@ -137,6 +143,9 @@ def mouse_thread(dev, tfsm, composer, ssh_stream, shared_state, printer, shutdow
 
 def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer, shutdown_event):
     try:
+        last_x = 0 
+        last_y = 0
+
         while not shutdown_event.is_set():
             time.sleep(0.001)
 
@@ -161,34 +170,40 @@ def mmabs_thread(tfsm, composer, ssh_stream, shared_state, printer, shutdown_eve
                 x, y, sw, sh = composer.get_pointer_position()
                 shared_state['screen_width'] = sw / 5120
 
+                if x > 0: 
+                    last_x = x
+
+                if y > 0: 
+                    last_y = y 
                 #printer(f"x position is {x} screen width is {sw}") 
                 if x >= (sw - 1):
                     tfsm.edge = True
-                    if composer.composer == "WAYLAND":
-                        tfsm.relx = True 
-
-                    print("We should transition here") 
-
-                    scaled_y = int((y / sh) * shared_state['remote_screen_max_y'])
-
-                    tfsm.fsm()
-
-                    if tfsm.flag_pos:
-                        print("FSM: flag_position = True") 
-                        abs_report = bytearray([0x00, 0x00, 0x00, scaled_y & 0xFF, (scaled_y >> 8) & 0xFF])
-                        shared_state['remote_virtual_y'] = int((y / sh) * shared_state['max_virtual_y'])
-                        try:
-                            ssh_stream.stdin.write(abs_report)
-                            ssh_stream.stdin.flush()
-                            printer("[Toggle] Sent absolute reset to remote: X=0 Y=", scaled_y)
-                            tfsm.flag_pos_ack = True 
-                        except Exception as e:
-                            print("[Remote Abs Write Error]", e)
+                    scaled_y = int((last_y / sh) * shared_state['remote_screen_max_y'])
                 else:
                     tfsm.edge = False
+                    #if composer.composer == "WAYLAND":
+                    #    tfsm.relx = True 
+
+                #print("We should transition here") 
+
+                #scaled_y = int((y / sh) * shared_state['remote_screen_max_y'])
+
+                tfsm.fsm()
+
+                if tfsm.flag_pos:
+                    print("FSM: flag_position = True") 
+                    abs_report = bytearray([0x00, 0x00, 0x00, scaled_y & 0xFF, (scaled_y >> 8) & 0xFF])
+                    shared_state['remote_virtual_y'] = int((last_y / sh) * shared_state['max_virtual_y'])
+                    try:
+                        ssh_stream.stdin.write(abs_report)
+                        ssh_stream.stdin.flush()
+                        printer("[Toggle] Sent absolute reset to remote: X=0 Y=", scaled_y)
+                        tfsm.flag_pos_ack = True 
+                    except Exception as e:
+                        print("[Remote Abs Write Error]", e)
                     
-                    if composer.composer == "WAYLAND":
-                        tfsm.relx = False 
+                #    if composer.composer == "WAYLAND":
+                #        tfsm.relx = False 
 
         print("Mouse absolute thread exited cleanly") 
 

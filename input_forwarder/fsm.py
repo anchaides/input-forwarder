@@ -13,7 +13,7 @@ class TFSM_STATE(Enum):
     POST_TOGGLE_GRAB    = 6 
 
 class TFSM:
-    def __init__(self, grab_devices, ungrab_devices, printer=print):
+    def __init__(self, grab_devices, ungrab_devices, composer, printer=print ):
         self._state = TFSM_STATE.IDLE
         self._key1 = False
         self._key2 = False
@@ -21,10 +21,12 @@ class TFSM:
         self._flagmi = True
         self._edge = False
         self._relx = False
+        self._composer = composer 
         self._release = False
         self._grabbed = False
         self._flag_pos = False
         self._flag_pos_ack = False
+        self._hold_cnt     = False 
         #self._updt_pos = False
         self._lock = threading.Lock()
 
@@ -85,8 +87,26 @@ class TFSM:
 
     @edge.setter
     def edge(self, value):
-        self._edge = value
-        self.fsm()
+        if self._composer.composer == "WAYLAND": 
+            if value:
+                #self._print(f"TFSM: Detected edge, edge  = True") 
+                self._hold_cnt = 50 
+                self._edge = value 
+                self.fsm() 
+            elif not value and self.edge: 
+                #self._print(f"Attempting to remove edge")
+                if self._hold_cnt == 0:
+                    #self._print(f"TFSM: counter = 0") 
+                    self._edge = value
+                    self.fsm()
+                else:
+                    #self._print(f"TFSM: exiting edge, edge = False") 
+                    self._hold_cnt -= 1 
+                
+        else: 
+            #self._print("Not supposed to be here") 
+            self._edge = value
+            self.fsm()
 
     @property
     def release(self):
@@ -136,8 +156,8 @@ class TFSM:
     def fsm(self):
         with self._lock:
             if self.state == TFSM_STATE.IDLE:
-                if self.edge: 
-                    print(f"Edge = True, Relx = {self.relx}")
+                #if self.edge: 
+                    #print(f"Edge = True, Relx = {self.relx}")
                 if self.key1 and self.key2:
                     self._print("Keyboard Toggle")
                     self.state = TFSM_STATE.TOGGLEK
@@ -173,7 +193,7 @@ class TFSM:
                         self.grabbed = True
 
             elif self.state == TFSM_STATE.PEN:
-                self._print(f"PEN, edge = {self.edge} relx = {self.relx}")  
+                #self._print(f"PEN, edge = {self.edge} relx = {self.relx}")  
                 if not (self.edge or self.relx):
                     self._print("Back to IDLE from PEN")
                     self.state = TFSM_STATE.IDLE
@@ -187,7 +207,7 @@ class TFSM:
                     self.state = TFSM_STATE.PEN
 
             elif self.state == TFSM_STATE.POST_TOGGLE_GRAB: 
-                self._print("State is TFSM_STATE.POST_TOGGLE_GRAB")
+                #self._print("State is TFSM_STATE.POST_TOGGLE_GRAB")
                 if self.flag_pos_ack == True: 
                     self._print("POST_TOGGLE_GRAB: Updated position has been sent to device, now we can grab devices") 
                     self._grab_devices() 

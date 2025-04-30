@@ -105,6 +105,7 @@ def main():
     tfsm = TFSM(
         grab_devices=lambda: (keyboard.grab(), mouse.grab()),
         ungrab_devices=lambda: (keyboard.ungrab(), mouse.ungrab()),
+        composer=composer,
         printer=safe_print
     )
 
