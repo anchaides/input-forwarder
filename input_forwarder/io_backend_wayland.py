@@ -74,7 +74,7 @@ class WaylandComposerBackend(ComposerBackend):
         total_width = 0
         height_set = set()
 
-        mode_regex = re.compile(r"\d+:(\d+)x(\d+)@\d+[*]")  # Matches refresh rate and finds '*' or '*!'
+        mode_regex = re.compile(r"\d+:(\d+)x(\d+)@\d+\S+[*]")  # Matches refresh rate and finds '*' or '*!'
         geom_regex = re.compile(r"Geometry:\s+\d+,\d+\s+(\d+)x(\d+)")
 
         for block in screen_blocks:
